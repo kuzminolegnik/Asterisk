@@ -1,0 +1,14 @@
+{
+  "name": "asterisk",
+  "version": "0.0.1",
+  "description": "Server ATC",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "kuzminolegnik",
+  "license": "ISC",
+  "dependencies": {
+    "asterisk-ami": "^0.1.0"
+  }
+}
