@@ -31,7 +31,7 @@ module.exports = function () {
                 return block;
             }
             catch (e) {
-                me.logError("Is not loading module " + name )
+                me.logError("Is not loading module " + name)
             }
         },
 
@@ -66,6 +66,7 @@ module.exports = function () {
             var me = this,
                 success = parameters.success,
                 onmessage = parameters.onmessage,
+                onclose = parameters.onclose,
                 failure = parameters.failure,
                 onconnected = parameters.onconnected,
                 WebSocket = require('ws'),
@@ -89,17 +90,77 @@ module.exports = function () {
             );
 
             /**
+             * Возвращает id сессии.
+             * @return {string|null}
+             */
+            WebSocket.prototype.getId = function () {
+                var me = this,
+                    connection = me.getConnection();
+
+                if (!connection) {
+                    return null;
+                }
+
+                return connection['id'];
+            };
+
+            /**
+             * Возвращает массив достыпных модулей
+             * @return {Array|null}
+             */
+            WebSocket.prototype.getAccess = function () {
+                var me = this,
+                    connection = me.getConnection();
+
+                if (!connection) {
+                    return null;
+                }
+
+                return connection['access_modules'];
+            };
+
+            /**
+             * Устанавливает параметры сессии пользователя
+             * @param {object} value - параметры сессии.
+             * @return {object}
+             */
+            WebSocket.prototype.setConnection = function (value) {
+                var me = this;
+
+                return me['__dataconnect'] = value;
+            };
+
+            /**
+             * Возвращает параметры сессии пользователя
+             * @return {object}
+             */
+            WebSocket.prototype.getConnection = function () {
+                var me = this;
+
+                return me['__dataconnect'];
+            };
+
+            /**
              * Метод отправки JSON объекта.
              * @param {object} data - объект данных
              * @return {boolean}
              */
             WebSocket.prototype.sendData = function (data) {
+                var me = this,
+                    module = data["module"],
+                    access = me.getAccess();
+
+                console.log(access, module);
+                if (access.indexOf(module) == -1) {
+                    return false;
+                }
                 try {
                     data = JSON.stringify(data);
                     this.send(data);
+                    return true;
                 }
                 catch (e) {
-                    return false
+                    return false;
                 }
             };
 
@@ -114,17 +175,27 @@ module.exports = function () {
                     return false
                 }
                 wss.clients.forEach(function (client) {
-                    if (client.readyState === WebSocket.OPEN && client.isAuthorize) {
-                        client.sendData({
-                            event: "send_data_all",
-                            stage: "end",
-                            data: data
-                        });
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.sendData(data);
                     }
                 });
             };
 
             wss.on('connection', function (clientWss) {
+
+                clientWss.setConnection({
+                    access_modules: 'login'
+                });
+
+                clientWss.on('close', function () {
+                    if (typeof onclose == 'function') {
+                        onclose({
+                            event: "disconnect",
+                            data: {},
+                            __wss: clientWss
+                        }, clientWss)
+                    }
+                });
 
                 clientWss.on('message', function (response) {
                     try {
@@ -140,7 +211,12 @@ module.exports = function () {
                 });
 
                 if (typeof onconnected == 'function') {
-                    onconnected(clientWss)
+
+                    onconnected({
+                        event: "connection",
+                        data: {},
+                        __wss: clientWss
+                    }, clientWss)
                 }
 
                 me.logInfo("There was a successful connected client to the WSS server " + clientWss["upgradeReq"]["headers"]["origin"]);
@@ -240,6 +316,55 @@ module.exports = function () {
                     });
                 }
             );
+        },
+
+        /**
+         * Регестрация пользователя системы в CRM.
+         * @private
+         * @param {function} parameters.success - функция вызов которой происходит после успешного соединения с CRM сервером
+         * @param {function} parameters.failure - функция вызов которой происходит после неудачного соединения с CRM сервером
+         */
+        connectSystem = function (parameters) {
+            var me = this,
+                success = parameters.success,
+                failure = parameters.failure,
+                params = me.getConfig('crm.system_user'),
+                user;
+
+            me.request({
+                path: "/php/login.php",
+                params: params,
+                success: function (data) {
+                    try {
+                        data = JSON.parse(data);
+                    }
+                    catch (e) {
+                        data = {};
+                        me.logError("Can't login system user");
+                        if (typeof failure == "function") {
+                            failure();
+                        }
+                    }
+                    if (data instanceof Array && data[0]) {
+                        user = data[0];
+                        me.setConfig('system_user_token', user['token']);
+                        if (typeof success == "function") {
+                            success(user);
+                        }
+                        return;
+                    }
+                    me.logError("Can't login system user: " + data['error']);
+                    if (typeof failure == "function") {
+                        failure();
+                    }
+                },
+                failure: function () {
+                    me.logError("Can't login system user");
+                    if (typeof failure == "function") {
+                        failure();
+                    }
+                }
+            });
         };
 
     App = function (config) {
@@ -261,24 +386,29 @@ module.exports = function () {
             _route = route.bind(me),
             _connectWSS = connectWSS.bind(me),
             _connectDB = connectDB.bind(me),
-            _connectAMI = connectAMI.bind(me);
+            _connectAMI = connectAMI.bind(me),
+            _connectSystem = connectSystem.bind(me);
 
-        _connectWSS({
-            onmessage: function (data) {
-                _route(data, "wss");
-            },
-            onconnected: function (wss) {
-                wss.sendData({
-                    event: "login",
-                    stage: "init"
-                });
-            },
+        _connectSystem({
             success: function () {
-                _connectDB({
+                _connectWSS({
+                    onclose: function (data) {
+                        _route(data, "wss");
+                    },
+                    onmessage: function (data) {
+                        _route(data, "wss");
+                    },
+                    onconnected: function (data) {
+                        _route(data, "wss");
+                    },
                     success: function () {
-                        _connectAMI({
-                            onevent: function (data) {
-                                _route(data, "ami");
+                        _connectDB({
+                            success: function () {
+                                _connectAMI({
+                                    onevent: function (data) {
+                                        _route(data, "ami");
+                                    }
+                                });
                             }
                         });
                     }
@@ -300,25 +430,26 @@ module.exports = function () {
         var me = this,
             request = me.getRequest(),
             config = me.getConfig("request"),
-            path = parameters["path"],
+            pathUrl = parameters["path"],
             cookie = parameters["cookie"] || '',
             params = parameters["params"],
+            headers = parameters["headers"],
             success = parameters["success"],
             failure = parameters["failure"],
             callback = parameters["callback"],
             jar = request.jar(),
-            url = config["uri"] + path;
+            url = config["uri"] + pathUrl;
 
         cookie = request.cookie(cookie);
 
         jar.setCookie(cookie, url);
-
         request(
             {
                 uri: url,
                 method: config["method"],
                 jar: jar,
-                formData: params
+                formData: params,
+                headers: headers
             },
             function (error, response, body) {
                 if (typeof callback == "function") {
@@ -334,6 +465,24 @@ module.exports = function () {
                 }
             }
         )
+    };
+
+    App.prototype.systemRequest = function (parameters) {
+        var me = this,
+            dbPrefix = me.getConfig('crm.db.prefix_path'),
+            procedure = parameters['procedure'],
+            systemToken = me.getConfig('system_user_token');
+
+        if (!systemToken) {
+            me.logError('system_user_token is not found');
+        }
+
+        parameters['path'] = dbPrefix + procedure;
+        parameters['headers'] = {
+            Authorization: 'Basic ' + systemToken
+        };
+
+        me.request(parameters);
     };
 
     /**
@@ -377,14 +526,15 @@ module.exports = function () {
      * Оправка данных всем пользователям.
      * Для отправки сообщения используется метод {@link wss.sendDataAll}
      * @param {object} data - обект данных для отправки данных пользователю.
+     * @param {object} option - параметры оправки данных пользователям.
      * @param {string} data.event - название событяи.
      * @param {string} data.stage - этап обработки события.
      */
-    App.prototype.sendData = function (data) {
+    App.prototype.sendData = function (data, option) {
         var me = this,
             wss = me.getWSS();
 
-        wss.sendDataAll(data);
+        wss.sendDataAll(data, option);
     };
 
     /**
@@ -432,7 +582,7 @@ module.exports = function () {
         var me = this,
             config = me["__config"];
 
-        return config.set(key, value);
+        return config[key] = value;
     };
 
     /**

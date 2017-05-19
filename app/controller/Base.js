@@ -1,70 +1,70 @@
 module.exports = function (app) {
-    var Base,
-        path = require("path");
+    var Controller;
 
-    Base = function (params) {
+    /**
+     *
+     * @param params
+     * @constructor
+     */
+    Controller = function (params) {
         var me = this,
+            modelListeners = params["model"] || {},
             ami = params["ami"] || {},
-            wss = params["wss"] || {};
+            wss = params["wss"] || {},
+            name = params["name"],
+            model;
 
+        me["__modellisteners"] = modelListeners || {};
         me["__amilisteners"] = ami || {};
         me["__wsslisteners"] = wss || {};
-        me["__model"] = null;
-        me["__name"] = params["name"];
+        me["__name"] = name;
         me["__db"] = app.getDB();
         me["__wss"] = app.getWSS();
         me["__utils"] = app.getUtils();
+
+        model = me["__model"] = app.requireModel(params["name"]);
+        model.setListeners(modelListeners);
+        model.setController(me);
     };
 
-    Base.prototype.getWSS = function () {
+    Controller.prototype.getWSS = function () {
         var me = this;
         return me["__wss"];
     };
 
-    Base.prototype.getModel = function () {
-        var me = this,
-            model = me["__model"],
-            name = me.getName();
+    Controller.prototype.getModel = function () {
+        var me = this;
 
-        if (!model) {
-            model = me["__model"] = app.requireModel(name);
-        }
-
-        return model;
+        return me["__model"];
     };
 
-    Base.prototype.getName = function () {
-        var me = this,
-            name = me["__name"],
-            filename;
+    Controller.prototype.getName = function () {
+        var me = this;
 
-        if (!name) {
-            filename = path.normalize(__filename);
-            name = me["__name"] = path.basename(
-                filename,
-                path.extname(filename)
-            )
-        }
-
-        return name;
+        return me["__name"];
     };
 
-    Base.prototype.getAmiListeners = function () {
+    Controller.prototype.getModelListeners = function () {
+        var me = this;
+        return me["__modellisteners"];
+    };
+
+    Controller.prototype.getAmiListeners = function () {
         var me = this;
         return me["__amilisteners"];
     };
 
-    Base.prototype.getWssListeners = function () {
+    Controller.prototype.getWssListeners = function () {
         var me = this;
         return me["__wsslisteners"];
     };
 
-    Base.prototype.getUtils = function () {
+    Controller.prototype.getUtils = function () {
         var me = this;
         return me["__utils"];
     };
 
-    Base.prototype.emitAmiEvent = function (key) {
+    Controller.prototype.emitAmiEvent = function (key) {
         var me = this,
             listeners = me.getAmiListeners(),
             parameters = (Array.prototype.slice.apply(arguments, [])).splice(1),
@@ -75,7 +75,7 @@ module.exports = function (app) {
         }
     };
 
-    Base.prototype.emitWssEvent = function (key) {
+    Controller.prototype.emitWssEvent = function (key) {
         var me = this,
             listeners = me.getWssListeners(),
             parameters = (Array.prototype.slice.apply(arguments, [])).splice(1),
@@ -86,5 +86,23 @@ module.exports = function (app) {
         }
     };
 
-    return Base;
+    Controller.prototype.send = function (parameters) {
+        var me = this,
+            data = parameters['data'],
+            client = parameters['client'],
+            isChecked = parameters['isChecked'];
+
+        parameters['module'] = me.getName();
+
+        if (client) {
+            delete parameters['client'];
+            client.sendData(parameters);
+        }
+        else {
+            app.sendData(parameters);
+        }
+
+    };
+
+    return Controller;
 };

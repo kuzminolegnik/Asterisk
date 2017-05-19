@@ -8,6 +8,16 @@ module.exports = function (app) {
                 {
                     route: "login",
                     eventEmit: "onLogin"
+                },
+                {
+                    route: "disconnect",
+                    eventEmit: "onDisconnect"
+
+                },
+                {
+                    route: "connection",
+                    eventEmit: "onConnection"
+
                 }
             ]
         }

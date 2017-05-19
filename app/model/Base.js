@@ -5,11 +5,11 @@ module.exports = function (app) {
          * Формтирование данных перед сохранением.
          * @private
          * @param {object} data - объект форматируемых данных
-         * @param {boolean} isUpdate - признак изменения существующей записи.
-         *                           Если стаит true то подстановка значений по умолчанию не происходит.
+         * @param {boolean} isCreate - признак изменения существующей записи.
+         *                           Если стоит true то подстановка значений по умолчанию не происходит.
          * @return {object}
          */
-        rendererData = function (data, isUpdate) {
+        rendererRawData = function (data, isCreate) {
             var me = this,
                 fields = me.getFields(),
                 utils = me.getUtils(),
@@ -57,9 +57,19 @@ module.exports = function (app) {
                             value = null;
                         }
                     }
+                    else if (type == 'object') {
+                        if (Object.prototype.toString.call(value) !== "[object Object]") {
+                            value = {};
+                        }
+                    }
+                    else if (type == 'array') {
+                        if (Object.prototype.toString.call(value) !== "[object Array]") {
+                            value = [];
+                        }
+                    }
                 }
 
-                if ((value === undefined || value === null) && isUpdate === true) {
+                if ((value === undefined || value === null) && isCreate === true) {
                     if (typeof defaultValue == "function") {
                         value = defaultValue.apply(me, [data]);
                     }
@@ -73,20 +83,38 @@ module.exports = function (app) {
                 }
             });
 
-            fields.forEach(function (field) {
-                name = field["name"];
-                renderer = field["renderer"];
-
-                if (typeof renderer == "function") {
-                    result[name] = renderer.apply(me, [result[name], result, data]);
-                }
-            });
+            if (isCreate === true) {
+                result = rendererData.apply(me, [result])
+            }
 
             return result;
         },
 
         /**
-         * Получение клуча из отфармотированных данных {@link rendererData}.
+         * Пост обработка записи. Данная обработка происходит после формирования запси.
+         * @param {object} data - объект форматируемых данных
+         * @return {*}
+         */
+        rendererData = function (data) {
+            var me = this,
+                fields = me.getFields(),
+                renderer, name;
+
+            fields.forEach(function (field) {
+                name = field["name"];
+                renderer = field["renderer"];
+
+                if (typeof renderer == "function") {
+                    data[name] = renderer.apply(me, [data[name], data]);
+                }
+            });
+
+            return data;
+        },
+
+
+        /**
+         * Получение клуча из отфармотированных данных {@link rendererRawData}.
          * @private
          * @param {object} data - отформатированные данные.
          * @param {boolean} isRenderer - указывает на необходимость форматирования ключа.
@@ -113,14 +141,30 @@ module.exports = function (app) {
          * Формирования ключа, под которым будет сохранена запись
          * @private
          * @param {string|number} key - ключ для сохранения данных.
-         * @return {string}
+         * @return {string|null}
          */
         rendererKey = function (key) {
             var me = this,
                 name = me.getName(),
                 utils = me.getUtils();
 
+            if (!key) {
+                return null;
+            }
+
             return name + "_" + utils.String.encodeBase64(key);
+        },
+
+        /**
+         * Возвращает контекст вызова событий.
+         * Если не был установлен контролер {@link Base.setController}, то в качестве контекста используется модель.
+         * @return {Object|Base}
+         */
+        getContext = function () {
+            var me = this,
+                controller = me.getController();
+
+            return controller || me;
         };
 
     /**
@@ -139,10 +183,48 @@ module.exports = function (app) {
         var me = this;
 
         me["__name"] = params["name"] || "";
+        me["__listeners"] = {};
+        me["__controller"] = null;
         me["__keyProperty"] = params["keyProperty"] || "id";
         me["__db"] = app.getDB();
         me["__utils"] = app.getUtils();
         me["__fields"] = params["fields"] || [];
+    };
+
+    /**
+     * Возвращает контроллер установленный с помощью {@link Base.setController},
+     * который будет использоваться при вызове событий модели в качестве контекста.
+     * @return {object}
+     */
+    Base.prototype.getController = function () {
+        var me = this;
+        return me["__controller"];
+    };
+
+    /**
+     * Устанавливает контроллер, который будет использоваться при вызове событий модели в качестве контекста.
+     * @return {object}
+     */
+    Base.prototype.setController = function (value) {
+        var me = this;
+        return me["__controller"] = value;
+    };
+    /**
+     * Возвращает объект событий.
+     * @return {object}
+     */
+    Base.prototype.getListeners = function () {
+        var me = this;
+        return me["__listeners"];
+    };
+
+    /**
+     * Устанавливает объект событий модели.
+     * @return {object}
+     */
+    Base.prototype.setListeners = function (value) {
+        var me = this;
+        return me["__listeners"] = value;
     };
 
     /**
@@ -164,7 +246,7 @@ module.exports = function (app) {
         var me = this;
 
         return getKey.apply(me, [
-            rendererData.apply(me, [values, true]),
+            rendererRawData.apply(me, [values, true]),
             false
         ]);
     };
@@ -179,7 +261,7 @@ module.exports = function (app) {
     };
 
     /**
-     * Возвращает утилиту для работы с данными.{@link app.getUtils}
+     * Возвращает утилиту для работы с данными.{@link App.getUtils}
      * @return {object}
      */
     Base.prototype.getUtils = function () {
@@ -188,7 +270,7 @@ module.exports = function (app) {
     };
 
     /**
-     * Возвращает объект для работы с DB. Объект создается после успешного создания базой данных.{@link app.getDB}
+     * Возвращает объект для работы с DB. Объект создается после успешного создания базой данных.{@link App.getDB}
      * @return {object}
      */
     Base.prototype.getDB = function () {
@@ -211,20 +293,29 @@ module.exports = function (app) {
      * @param {object} parameters.values - данные для создания записи
      * @param {function} parameters.success - функция обратного вызова исполняется в случае успешного выполнения операции
      * @param {function} parameters.failure - функция обратного вызова исполняется в случае не успешного выполнения операции
-     * @param {boolean} parameters.isRenderer - флаг обработки входящих данных. для обработки используется метод {@link rendererData}
+     * @param {boolean} parameters.isRenderer - флаг обработки входящих данных. для обработки используется метод {@link rendererRawData}
      */
     Base.prototype.create = function (parameters) {
         var me = this,
-            values = parameters.values,
+            rawValues = parameters.values,
             success = parameters.success,
             failure = parameters.failure,
             isRenderer = parameters.isRenderer,
             db = me.getDB(),
-            key;
+            listeners = me.getListeners(),
+            context = getContext.apply(me, []),
+            onBeforeCreate = listeners['beforecreate'],
+            onCreate = listeners['create'],
+            onUpdate = listeners['update'],
+            key, result, values;
 
         if (isRenderer !== false) {
-            values = rendererData.apply(me, [values, true]);
+            values = rendererRawData.apply(me, [rawValues, true]);
         }
+        else {
+            values = rawValues;
+        }
+
         key = getKey.apply(me, [values]);
 
         if (key === undefined) {
@@ -232,7 +323,30 @@ module.exports = function (app) {
             return;
         }
 
+
+        if (typeof onBeforeCreate == 'function') {
+            result = onBeforeCreate.apply(context, [values, rawValues]);
+            if (result === false) {
+                return;
+            }
+            if (Object.prototype.toString.call(result) === "[object Object]") {
+                values = result;
+            }
+        }
+
         db.put(key, values, function (error) {
+
+            if (isRenderer === false) {
+                if (typeof onUpdate == 'function') {
+                    onUpdate.apply(context, [values, rawValues, error]);
+                }
+            }
+            else {
+                if (typeof onCreate == 'function') {
+                    onCreate.apply(context, [values, rawValues, error]);
+                }
+            }
+
             if (error) {
                 app.logError("can't create record is key: " + key);
                 if (typeof failure == "function") {
@@ -242,8 +356,9 @@ module.exports = function (app) {
             }
 
             if (typeof success == "function") {
-                success(values);
+                success(values, key);
             }
+
         });
     };
 
@@ -263,7 +378,7 @@ module.exports = function (app) {
 
         stream = db.createReadStream(
             {
-                keys: true,
+                keys: false,
                 values: true,
                 gte: name,
                 lte: name + "\uffff"
@@ -297,9 +412,12 @@ module.exports = function (app) {
             success = parameters.success,
             failure = parameters.failure,
             utils = me.getUtils(),
-            key;
+            listeners = me.getListeners(),
+            context = getContext.apply(me, []),
+            onBeforeUpdate = listeners['beforeupdate'],
+            key, result;
 
-        values = rendererData.apply(me, [values]);
+        values = rendererRawData.apply(me, [values]);
         key = getKey.apply(me, [values, false]);
 
         if (key === undefined) {
@@ -307,10 +425,21 @@ module.exports = function (app) {
             return;
         }
 
+        if (typeof onBeforeUpdate == 'function') {
+            result = onBeforeUpdate.apply(context [values]);
+            if (result === false) {
+                return;
+            }
+            if (Object.prototype.toString.call(result) === "[object Object]") {
+                values = result;
+            }
+        }
+
         me.getById({
             id: key,
             success: function (oldValues) {
                 values = utils.Object.merge(oldValues, values);
+                values = rendererData.apply(me, [values]);
 
                 me.create({
                     values: values,
@@ -341,19 +470,44 @@ module.exports = function (app) {
      */
     Base.prototype.destroy = function (parameters) {
         var me = this,
-            key = parameters.id,
+            id = parameters.id,
+            values = parameters.values,
             success = parameters.success,
             failure = parameters.failure,
-            db = me.getDB();
+            listeners = me.getListeners(),
+            context = getContext.apply(me, []),
+            onBeforeDestroy = listeners['beforedestroy'],
+            onDestroy = listeners['destroy'],
+            db = me.getDB(),
+            result, key;
+
+        if (id) {
+            key = rendererKey.apply(me, [id]);
+        }
+        else if (values) {
+            key = rendererKey.apply(me, [
+                me.createId(values)
+            ]);
+        }
 
         if (key === undefined) {
             app.logError("can't destroy record is key undefined");
             return;
         }
 
-        key = rendererKey.apply(me, [key]);
+        if (typeof onBeforeDestroy == 'function') {
+            result = onBeforeDestroy.apply(context, [key]);
+            if (result === false) {
+                return;
+            }
+        }
 
         db.del(key, function (error) {
+
+            if (typeof onDestroy == 'function') {
+                onDestroy.apply(context, [key, error]);
+            }
+
             if (error) {
                 if (error.notFound) {
                     if (typeof failure == "function") {

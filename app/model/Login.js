@@ -26,10 +26,17 @@ module.exports = function (app) {
                 name: "token",
                 type: "string"
             },
-            // {
-            //     name: "access",
-            //     mapping: "subprograms_access"
-            // },
+            {
+                name: "access_modules",
+                mapping: "subprograms_access",
+                renderer: function (value) {
+                    var result = ['login'];
+                    if (value && value['customers_list']) {
+                        result.push('channels')
+                    }
+                    return result;
+                }
+            },
             {
                 name: "date",
                 type: "date"

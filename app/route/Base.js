@@ -96,7 +96,7 @@ module.exports = function (app) {
                 controller.emitAmiEvent(eventEmit, data, event);
             }
             else if (type == "wss") {
-                controller.emitWssEvent(eventEmit, data["data"], data["__wss"], data["stage"], data, event);
+                controller.emitWssEvent(eventEmit, data["data"], data["__wss"], event, data, data["stage"]);
             }
         });
 
