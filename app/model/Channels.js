@@ -1,5 +1,6 @@
 module.exports = function (app) {
     var Base = app.requireModel("base"),
+
         /**
          * Форматирование номера телефона клиента, для получения данных о нем.
          * @param {string} value - номер телефона полученный с сервера Asterisk
@@ -10,25 +11,30 @@ module.exports = function (app) {
             if (value.length == 10 && value[0] !== '+') {
                 value = '+7' + value;
             }
+            else if (value.length == 11 && value[0] !== '+' && value[0] == '8') {
+                value = '+7' + value.substr(1);
+            }
             else if (value[0] !== '+') {
                 value = '+' + value;
             }
             return value;
         },
+
         /**
          * Определение типа звонка входящий или исходящий вызов
-         * @param {object} data - предварительные данные записи
+         * @param {object} rawData - предварительные данные записи
          * @return {number}
          */
-        defaultValueTypeCall = function (data) {
+        defaultValueTypeCall = function (rawData) {
             if (
-                (data["context"] && /full/g.test(data["context"])) ||
-                (data["calleridnum"] && data["calleridnum"].length <= 5)
+                (rawData["context"] && /full/g.test(rawData["context"])) ||
+                (rawData["calleridnum"] && rawData["calleridnum"].length <= 5)
             ) {
                 return 2;
             }
             return 1;
         },
+
         /**
          * Определение статуса звонка ожидание, дозврн или разговор с оператором
          * @param {string} value - название события полеченное от сервера Asterisk
@@ -36,10 +42,12 @@ module.exports = function (app) {
          */
         rendererStatusId = function (value) {
             var status = String(value).toLowerCase();
+
             switch (status) {
                 case 'newchannel':
                     return 1;
                 case 'newconnectedline':
+                case 'dialbegin':
                     return 2;
                 case 'bridgeenter':
                     return 3;
@@ -48,6 +56,44 @@ module.exports = function (app) {
                 case 'hangup':
                     return 4;
             }
+        },
+
+        /**
+         * Определение телефона компаниии
+         * @param {*} value
+         * @param {Object} data
+         */
+        rendererCompanyPhone = function (value, data) {
+            var phone = value;
+
+            if (phone) {
+                return phone;
+            }
+
+            if (data["status"] == 1 && data["type_call_id"] == 1) {
+                phone = data['caller_extended']
+            }
+
+            return phone;
+        },
+
+        /**
+         * Определение статуса звонка исходя из параметров клента
+         * @param {object} data - предварительные данные записи
+         * @return {number}
+         */
+        rendererStatusCall = function (data) {
+            var customers = data['customers'],
+                status = -1;
+            if (!customers) {
+                return status;
+            }
+            customers.forEach(function (customer) {
+                if (customer['vip'] > status) {
+                    status = customer['vip'];
+                }
+            });
+            return status;
         };
 
     return new Base({
@@ -61,14 +107,14 @@ module.exports = function (app) {
             },
             {
                 name: "status",
-                mapping: "event",
-                renderer: rendererStatusId
+                renderer: function (value, data) {
+                    return rendererStatusId(data['event']);
+                }
             },
             {
                 name: "status_name",
-                mapping: "event",
-                renderer: function (value) {
-                    var status = rendererStatusId(value);
+                renderer: function (value, data) {
+                    var status = rendererStatusId(data['event']);
                     switch (status) {
                         case 1:
                             return 'create_chanel';
@@ -82,6 +128,10 @@ module.exports = function (app) {
                 }
             },
             {
+                name: 'event',
+                mapping: "event"
+            },
+            {
                 name: "type_call_id",
                 type: 'string',
                 defaultValue: defaultValueTypeCall
@@ -89,8 +139,8 @@ module.exports = function (app) {
             {
                 name: "type_call",
                 type: 'string',
-                defaultValue: function (data) {
-                    var typeId = defaultValueTypeCall(data);
+                defaultValue: function (rawData) {
+                    var typeId = defaultValueTypeCall(rawData);
 
                     if (typeId == 2) {
                         return 'outbound';
@@ -104,9 +154,39 @@ module.exports = function (app) {
                 mapping: 'connectedlinenum',
                 renderer: function (value, data) {
                     if (data["type_call_id"] == 2) {
-                        return rendererPhoneNumber(value);
+                        return rendererPhoneNumber(data['caller_extended']);
                     }
                     return value;
+                }
+            },
+            {
+                name: "company_number",
+                dependent: true,
+                renderer: function (value, data) {
+                    return rendererCompanyPhone(value, data);
+                }
+            },
+            {
+                name: "company_name",
+                dependent: true,
+                renderer: function (value, data) {
+                    var phone = rendererCompanyPhone(value, data),
+                        companyName = {
+                            "4995004463": "TT",
+                            "35722314160": "TTCY",
+                            "442080682796": "FOG",
+                            "8005553056": "FOG"
+                        };
+
+                    if (phone == 'unknown') {
+                        return 'unknown';
+                    }
+
+                    if (value) {
+                        return value;
+                    }
+
+                    return companyName[phone] || null;
                 }
             },
             {
@@ -131,6 +211,10 @@ module.exports = function (app) {
                 type: "string"
             },
             {
+                name: "caller_extended",
+                mapping: 'exten'
+            },
+            {
                 name: "start_date",
                 defaultValue: function () {
                     return new Date();
@@ -143,6 +227,33 @@ module.exports = function (app) {
                     return new Date();
                 },
                 type: "date"
+            },
+            {
+                name: "status_customer",
+                renderer: function (value, data) {
+                    var status = rendererStatusCall(data),
+                        title = 'none';
+
+                    switch (status) {
+                        case 0:
+                            title = "Standard";
+                            break;
+                        case 1:
+                            title = "Vip";
+                            break;
+                        case 2:
+                            title = "Platinum";
+                            break;
+                    }
+
+                    return title;
+                }
+            },
+            {
+                name: "status_customer_id",
+                renderer: function (value, data) {
+                    return rendererStatusCall(data);
+                }
             },
             {
                 name: "customers",

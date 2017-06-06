@@ -14,18 +14,19 @@ module.exports = function (app) {
                 fields = me.getFields(),
                 utils = me.getUtils(),
                 result = {},
-                mapping, renderer, type, name, defaultValue, value;
+                mapping, renderer, type, name, defaultValue, value, isDependent;
 
             fields.forEach(function (field) {
                 name = field["name"];
                 type = field["type"];
                 renderer = field["renderer"];
+                isDependent = field["dependent"];
                 mapping = field["mapping"] || name;
                 defaultValue = field["defaultValue"];
 
                 value = data[mapping];
 
-                if (typeof type == "string" && value !== undefined) {
+                if (typeof type == "string" && value !== undefined && !isDependent) {
                     type = type.toLowerCase();
                     if (type == 'string') {
                         if (typeof value != "string") {
@@ -98,6 +99,8 @@ module.exports = function (app) {
         rendererData = function (data) {
             var me = this,
                 fields = me.getFields(),
+                utils = me.getUtils(),
+                clone = utils.Object.clone(data),
                 renderer, name;
 
             fields.forEach(function (field) {
@@ -105,7 +108,7 @@ module.exports = function (app) {
                 renderer = field["renderer"];
 
                 if (typeof renderer == "function") {
-                    data[name] = renderer.apply(me, [data[name], data]);
+                    data[name] = renderer.apply(me, [clone[name], clone]);
                 }
             });
 
@@ -409,6 +412,7 @@ module.exports = function (app) {
     Base.prototype.update = function (parameters) {
         var me = this,
             values = parameters.values,
+            merge = parameters.merge,
             success = parameters.success,
             failure = parameters.failure,
             utils = me.getUtils(),
@@ -438,7 +442,14 @@ module.exports = function (app) {
         me.getById({
             id: key,
             success: function (oldValues) {
-                values = utils.Object.merge(oldValues, values);
+                if (typeof merge == 'function') {
+                    values = merge.apply(context, [values, oldValues])
+                }
+                else {
+                    values = utils.Object.merge(oldValues, values);
+                }
+
+                //TODO [OLEG] Тут дыра получается что не всегда прилетают одинаковые данные
                 values = rendererData.apply(me, [values]);
 
                 me.create({

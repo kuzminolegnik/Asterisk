@@ -70,6 +70,7 @@ module.exports = function (app) {
 
                             if (!data[0]) {
                                 sendFailure();
+                                return;
                             }
 
                             model.create({

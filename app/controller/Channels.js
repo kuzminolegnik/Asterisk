@@ -37,7 +37,15 @@ module.exports = function (app) {
                                 if (data instanceof Array) {
                                     rawValue['customers'] = data;
                                     model.update({
-                                        values: rawValue
+                                        values: rawValue,
+                                        merge: function (values, oldValues) {
+                                            if (!oldValues || !oldValues['status']) {
+                                                return values;
+                                            }
+
+                                            oldValues['customers'] = data;
+                                            return oldValues;
+                                        }
                                     });
                                 }
                             }
@@ -52,8 +60,19 @@ module.exports = function (app) {
             },
             wss: {
 
-                onChannels: function () {
-                    console.log("onChannels")
+                onChannels: function (data, wss, event) {
+                    var me = this,
+                        model = me.getModel();
+
+                    model.read({
+                        success: function (data) {
+                            me.send({
+                                client: wss,
+                                event: event,
+                                data: data
+                            });
+                        }
+                    });
                 }
 
             },

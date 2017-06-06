@@ -150,7 +150,6 @@ module.exports = function () {
                     module = data["module"],
                     access = me.getAccess();
 
-                console.log(access, module);
                 if (access.indexOf(module) == -1) {
                     return false;
                 }
@@ -328,7 +327,7 @@ module.exports = function () {
             var me = this,
                 success = parameters.success,
                 failure = parameters.failure,
-                params = me.getConfig('crm.system_user'),
+                params = me.getConfig('crm.authorization'),
                 user;
 
             me.request({
@@ -429,7 +428,7 @@ module.exports = function () {
     App.prototype.request = function (parameters) {
         var me = this,
             request = me.getRequest(),
-            config = me.getConfig("request"),
+            config = me.getConfig("crm.request"),
             pathUrl = parameters["path"],
             cookie = parameters["cookie"] || '',
             params = parameters["params"],
@@ -443,6 +442,9 @@ module.exports = function () {
         cookie = request.cookie(cookie);
 
         jar.setCookie(cookie, url);
+
+        me.logSuccess('Send url: ' + url);
+
         request(
             {
                 uri: url,
@@ -467,9 +469,15 @@ module.exports = function () {
         )
     };
 
+    /**
+     * Функция запроса для получения данных из CRM системы.
+     * @param parameters - параметры запроса.
+     * @param parameters.procedure - процедура (префикс адресной строки).
+     * @param parameters.params - параметры запроса.
+     */
     App.prototype.systemRequest = function (parameters) {
         var me = this,
-            dbPrefix = me.getConfig('crm.db.prefix_path'),
+            dbPrefix = me.getConfig('crm.request.db_prefix_path'),
             procedure = parameters['procedure'],
             systemToken = me.getConfig('system_user_token');
 
@@ -526,15 +534,14 @@ module.exports = function () {
      * Оправка данных всем пользователям.
      * Для отправки сообщения используется метод {@link wss.sendDataAll}
      * @param {object} data - обект данных для отправки данных пользователю.
-     * @param {object} option - параметры оправки данных пользователям.
      * @param {string} data.event - название событяи.
      * @param {string} data.stage - этап обработки события.
      */
-    App.prototype.sendData = function (data, option) {
+    App.prototype.sendData = function (data) {
         var me = this,
             wss = me.getWSS();
 
-        wss.sendDataAll(data, option);
+        wss.sendDataAll(data);
     };
 
     /**

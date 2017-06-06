@@ -3,3 +3,5 @@ node_modules
 npm-debug.*
 db
 config/default.json
+config/production.json
+config/develop.json

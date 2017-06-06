@@ -18,11 +18,16 @@ module.exports = function (app) {
                     eventEmit: "onCreateChanel"
                 },
                 {
-                    route: "newconnectedline",
+                    route: [
+                        "newconnectedline",
+                        "dialbegin"
+                    ],
                     eventEmit: "onConnected"
                 },
                 {
-                    route: "bridgeenter",
+                    route: [
+                        "bridgeenter"
+                    ],
                     eventEmit: "onConnect"
                 },
                 {
