@@ -1,5 +1,7 @@
 module.exports = function () {
     var path = require("path"),
+        https = require('https'),
+        fs = require('fs'),
         chalk = require('chalk'),
         sugar = require('sugar'),
         request = require('request'),
@@ -14,6 +16,9 @@ module.exports = function () {
          */
         loadBlock = function (keyPath, name) {
             var me = this;
+
+            name = name[0].toUpperCase() + name.substr(1);
+
             try {
                 var pathBlock = path.join(me.getConfig(keyPath), name),
                     params = Array.prototype.slice.apply(arguments, []),
@@ -31,6 +36,7 @@ module.exports = function () {
                 return block;
             }
             catch (e) {
+                console.error(e);
                 me.logError("Is not loading module " + name)
             }
         },
@@ -70,10 +76,19 @@ module.exports = function () {
                 failure = parameters.failure,
                 onconnected = parameters.onconnected,
                 WebSocket = require('ws'),
-                wss;
+                configWss = me.getConfig("wss"),
+                pathCertificate = me.getConfig('absolute_path.certificate'),
+                wss, server;
 
-            wss = me["__wss"] = new WebSocket.Server(
-                me.getConfig("wss"),
+            server = https.createServer({
+                key: fs.readFileSync(path.join(pathCertificate, 'key.pem')),
+                cert: fs.readFileSync(path.join(pathCertificate, 'cert.pem'))
+            }, function (req, res) {
+                res.writeHead(200);
+                res.end("Wss Server");
+            }).listen(
+                configWss['port'],
+                configWss['host'],
                 function (error) {
                     if (error) {
                         me.logError("Error in case of create the WSS server");
@@ -86,6 +101,12 @@ module.exports = function () {
                     if (typeof success == "function") {
                         success();
                     }
+                }
+            );
+
+            wss = me["__wss"] = new WebSocket.Server(
+                {
+                    server: server
                 }
             );
 
@@ -219,6 +240,10 @@ module.exports = function () {
                 }
 
                 me.logInfo("There was a successful connected client to the WSS server " + clientWss["upgradeReq"]["headers"]["origin"]);
+            });
+
+            wss.on('error', function (error) {
+                me.logError("Error in case of create the WSS server: " + error);
             });
         },
 

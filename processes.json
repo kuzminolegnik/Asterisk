@@ -1,0 +1,22 @@
+{
+  "apps": [
+    {
+      "script": "./init.js",
+      "name": "dsoft",
+      "exec_mode": "fork",
+      "error_file": "./log/error.log",
+      "out_file": "./log/output.log",
+      "merge_logs": true,
+      "log_date_format": "YYYY-MM-DD HH:mm Z",
+      "max_memory_restart": "1000M",
+      "env": {
+        "NODE_APP_INSTANCE": 0,
+        "NODE_ENV": "develop"
+      },
+      "env_production" : {
+        "NODE_APP_INSTANCE": 0,
+        "NODE_ENV": "production"
+      }
+    }
+  ]
+}

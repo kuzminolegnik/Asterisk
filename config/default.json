@@ -1,0 +1,39 @@
+{
+  "debug": true,
+  "crm": {
+    "authorization": {
+      "login": "login_user",
+      "password": "password",
+      "crm_logger_module_name": "login"
+    },
+    "request": {
+      "uri": "https://crm.domen.com",
+      "db_prefix_path": "/dactions/crm/",
+      "method": "POST"
+    }
+  },
+  "ami": {
+    "host": "host",
+    "port": "9999",
+    "username": "username",
+    "password": "password"
+  },
+  "wss": {
+    "host": "127.0.0.1",
+    "port": "9999"
+  },
+  "db": {
+    "path": "./db"
+  },
+  "modules": [
+    "channels",
+    "login"
+  ],
+  "path": {
+    "root": "app",
+    "certificate": "certificate",
+    "controller": "controller",
+    "model": "model",
+    "route": "route"
+  }
+}
